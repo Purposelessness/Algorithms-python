@@ -1,4 +1,4 @@
-def prefix_function(s: str) -> list[int]:
+def prefix_function(s) -> list[int]:
     pi = [0] * len(s)
     for i in range(1, len(s)):
         j = pi[i - 1]
