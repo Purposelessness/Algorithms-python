@@ -1,20 +1,21 @@
 import pydotplus as pdot
 from PIL import Image
-import random
 import glob, os
 
+debug = True
+messy = True
 
 class AhoCorasick:
     class Node:
         def __init__(self):
             self.term: bool = False
             self.link: int = -1
-            self.up: int = -1
+            self.up: int = 0
             self.to: dict[int, int] = {}
             self.children = set()
             self.depth: int = 0
 
-    def __init__(self, alphabet):
+    def __init__(self, alphabet: list):
         self.tries: list[AhoCorasick.Node] = []
         self.alphabet = set(alphabet)
         self.tries.append(self.Node())
@@ -25,8 +26,7 @@ class AhoCorasick:
             substrings_dict[s] = []
         v = 0
         for i in range(len(text)):
-            c = text[i]
-            c = ord(c)
+            c = ord(text[i])
             v = self.tries[v].to[c]
             u = v
             while u != 0:
@@ -36,6 +36,62 @@ class AhoCorasick:
                         substrings_dict[s].append(i - self.tries[u].depth + 1)
                 u = self.tries[u].up
         return substrings_dict
+
+    def search_masked(self, text: str, substring: str, mask: str) -> list[int]:
+        subs_map: dict[str, list[int]] = {}
+        subs_count: int = 0
+        j = -1
+        for i in range(len(substring)):
+            if substring[i] == mask:
+                if j < i - 1:
+                    s = substring[j + 1 : i]
+                    if not subs_map.__contains__(s):
+                        subs_map[s] = []
+                    subs_map[s].append(j + 1)
+                    subs_count += 1
+                j = i
+        if j != len(substring) - 1:
+            s = substring[j + 1:]
+            if not subs_map.__contains__(s):
+                subs_map[s] = []
+            subs_map[s].append(j + 1)
+            subs_count += 1
+        if debug:
+            print(f"Substrings in {substring} divided by mask:\n{subs_map}")
+
+        occurences_count: list[int] = [0] * len(text)
+        v = 0
+        for i in range(len(text)):
+            c = ord(text[i])
+            v = self.tries[v].to[c]
+            u = v
+            while u != 0:
+                if self.tries[u].term:
+                    s_len = self.tries[u].depth
+                    s = text[i - s_len + 1 : i + 1]
+                    if subs_map.__contains__(s):
+                        for z in subs_map[s]:
+                            if (index := i - s_len - z + 1) >= 0:
+                                occurences_count[index] += 1
+                                if debug:
+                                    print(f"Found substring {s} on position "
+                                          f"{i - s_len + 1}")
+                                    print("Occurense in template on position " 
+                                          f"{index}")
+                                    print(occurences_count)
+                u = self.tries[u].up
+        ans: list[int] = []
+        for i in range(len(text) - len(substring) + 1):
+            if occurences_count[i] == subs_count:
+                ans.append(i)
+        if debug:
+            for i in range(len(occurences_count)):
+                if i in ans:
+                    print(f"\033[32m{occurences_count[i]}\033[0m", end='')
+                else:
+                    print(f"{occurences_count[i]}", end='')
+            print('')
+        return ans
 
     def add(self, s: str) -> None:
         v = 0
@@ -141,7 +197,7 @@ class AhoCorasick:
                     q.append((u, s + chr(c)))
                     g.add_edge(self.create_edge(s, s + chr(c), label=chr(c)))
                 # Too messy image...
-                # elif v != u and u != 0:
+                # elif messy and v != u and u != 0:
                 #     edge = pdot.Edge(s, m[u])
                 #     edge.set('label', chr(c))
                 #     g.add_edge(edge)
@@ -192,6 +248,10 @@ class AhoCorasick:
     def visual_search(self, text: str, substrings: list[str]) -> dict[str, list[int]]:
         (g, m) = self.get_graph()
         g.write('finite_state_machine.png', format='png')
+        old_img = Image.open('finite_state_machine.png')
+        img = Image.new(old_img.mode, (old_img.size[0], old_img.size[1] + 50), 'white')
+        img.paste(old_img, (0, 0))
+        img.save('finite_state_machine.png')
         frames_list: list[Image.Image] = []
 
         substrings_dict: dict[str, list[int]] = {}
@@ -227,19 +287,35 @@ class AhoCorasick:
         return substrings_dict
 
 
-def search(alphabet, text: str, substrings: list[str]) -> dict[str, list[int]]:
+def search(alphabet: list, text: str, substrings: list[str]) -> dict[str, list[int]]:
     solution = AhoCorasick(alphabet)
     for s in substrings:
         solution.add(s)
     solution.resolve()
-    (g, m) = solution.get_graph()
-    g.write('finite_state_machine.png', format='png')
     return solution.search(text, substrings)
 
-def visual_search(alphabet, text: str, substrings: list[str]) -> dict[str, list[int]]:
+def visual_search(alphabet: list, text: str, substrings: list[str]) -> dict[str, list[int]]:
     solution = AhoCorasick(alphabet)
     for s in substrings:
         solution.add(s)
     solution.resolve()
     return solution.visual_search(text, substrings)
+
+def search_masked(alphabet: list, text: str, substring: str, mask: str) -> list[int]:
+    solution = AhoCorasick(alphabet)
+    substrings: list[str] = list(filter(lambda x: x != "", substring.split(mask)))
+    for s in substrings:
+        solution.add(s)
+    solution.resolve()
+    return solution.search_masked(text, substring, mask)
+
+def visual_search_masked(alphabet: list, text: str, substring: str, mask: str) -> list[int]:
+    solution = AhoCorasick(alphabet)
+    substrings: list[str] = list(filter(lambda x: x != "", substring.split(mask)))
+    for s in substrings:
+        solution.add(s)
+    solution.resolve()
+    (g, m) = solution.get_graph()
+    g.write('finite_state_machine.png', format='png')
+    return solution.search_masked(text, substring, mask)
 
